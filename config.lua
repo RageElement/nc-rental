@@ -1,5 +1,8 @@
 Config = {}
 
+Config.locationthingy = vector3(109.2985, -1087.9554, 28.3033) 
+Config.carspawnlocation = vector4(110.9995, -1081.4813, 28.6714, 339.0954)
+
 Config.vehicleList = {
     { name = "Bison", model = "bison", price = 300 },
     { name = "Futo", model = "Futo", price = 250 },
