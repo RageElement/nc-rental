@@ -1,8 +1,65 @@
-QBCore = nil
-TriggerEvent('QBCore:GetObject', function(obj) QBCore = obj end)
+local pedSpawned = false
 
-RegisterNetEvent("nc-rental:vehiclelist")
-AddEventHandler("nc-rental:vehiclelist", function()
+Citizen.CreateThread(function()
+  while true do
+      Citizen.Wait(1000)
+          local pedCoords = GetEntityCoords(PlayerPedId()) 
+          local spawnCoords = Config.locationthingy
+          local dst = #(spawnCoords - pedCoords)
+          
+          if dst < 100 and pedSpawned == false then
+              TriggerEvent('gb-rental:spawnPed',spawnCoords, 343.9986)
+              pedSpawned = true
+          end
+          if dst >= 101  then
+              pedSpawned = false
+              DeleteEntity(npc)
+          end
+  end
+end)
+RegisterNetEvent('gb-rental:spawnPed')
+AddEventHandler('gb-rental:spawnPed',function(coords, heading)
+    local hash = `a_m_m_eastsa_01`
+    if not HasModelLoaded(hash) then
+        RequestModel(hash)
+        Wait(10)
+    end
+    while not HasModelLoaded(hash) do 
+        Wait(10)
+    end
+
+    pedSpawned = true
+    npc = CreatePed(5, hash, coords, heading, false, false)
+    FreezeEntityPosition(npc, true)
+    SetEntityInvincible(npc, true)
+    SetBlockingOfNonTemporaryEvents(npc, true)
+    TaskStartScenarioInPlace(npc, 'WORLD_HUMAN_CLIPBOARD')
+    SetModelAsNoLongerNeeded(hash)
+    exports.qtarget:AddEntityZone("Rentalped", npc, {
+      name="Rentalped",
+      debugPoly=false,
+      useZ = true,
+      }, {
+          options = {
+              {
+                  event = "gb-rental:vehiclelist",
+                  icon = "fas fa-circle",
+                  label = "Rent vehicle",
+              },
+              {
+                  event = "gb-rental:returnvehicle",
+                  icon = "fas fa-circle",
+                  label = "Return Vehicle",
+              },
+          },
+          distance = 3.5
+    })
+end)
+
+
+
+RegisterNetEvent("gb-rental:vehiclelist")
+AddEventHandler("gb-rental:vehiclelist", function()
   for i = 1, #Config.vehicleList do
     TriggerEvent('nh-context:sendMenu', {
       {
@@ -10,7 +67,7 @@ AddEventHandler("nc-rental:vehiclelist", function()
         header = Config.vehicleList[i].name,
         txt = "$"..Config.vehicleList[i].price..".00",
         params = {
-          event = "nc-rental:attemptvehiclespawn",
+          event = "gb-rental:attemptvehiclespawn",
           args = {
             id = Config.vehicleList[i].model,
             price = Config.vehicleList[i].price,
@@ -21,56 +78,51 @@ AddEventHandler("nc-rental:vehiclelist", function()
   end
 end)
 
-RegisterNetEvent("nc-rental:attemptvehiclespawn")
-AddEventHandler("nc-rental:attemptvehiclespawn", function(vehicle)
-    TriggerServerEvent("nc-rental:attemptPurchase",vehicle.id, vehicle.price)
+RegisterNetEvent("gb-rental:attemptvehiclespawn")
+AddEventHandler("gb-rental:attemptvehiclespawn", function(vehicle)
+    TriggerServerEvent("gb-rental:attemptPurchase",vehicle.id, vehicle.price)
 end)
 
-RegisterNetEvent("nc-rental:attemptvehiclespawnfail")
-AddEventHandler("nc-rental:attemptvehiclespawnfail", function()
-  QBCore.Functions.Notify("Not enough money.", "error")
+RegisterNetEvent("gb-rental:attemptvehiclespawnfail")
+AddEventHandler("gb-rental:attemptvehiclespawnfail", function()
+  exports['mythic_notify']:DoHudText('error', 'Not enough money')
 end)
 
-local PlayerName = nil
 
-RegisterNetEvent("nc-rental:giverentalpaperClient")
-AddEventHandler("nc-rental:giverentalpaperClient", function(model, plate, name)
-
-  local info = {
-    data = "Model : "..tostring(model).." | Plate : "..tostring(plate)..""
-  }
-  TriggerServerEvent('QBCore:Server:AddItem', "rentalpapers", 1, info)
-end)
-
-RegisterNetEvent("nc-rental:returnvehicle")
-AddEventHandler("nc-rental:returnvehicle", function()
+RegisterNetEvent("gb-rental:returnvehicle")
+AddEventHandler("gb-rental:returnvehicle", function()
   local car = GetVehiclePedIsIn(PlayerPedId(),true)
 
   if car ~= 0 then
     local plate = GetVehicleNumberPlateText(car)
     local vehname = string.lower(GetDisplayNameFromVehicleModel(GetEntityModel(car)))
-    if string.find(tostring(plate), "NC") then
-      QBCore.Functions.TriggerCallback('nc-rental:server:hasrentalpapers', function(HasItem)
-        if HasItem then
-          TriggerServerEvent("QBCore:Server:RemoveItem", "rentalpapers", 1)
-          TriggerServerEvent('nc-rental:server:payreturn',vehname)
-          DeleteVehicle(car)
-          DeleteEntity(car)
-        else
-          QBCore.Functions.Notify("I cannot take a vehicle without its papers.", "error")
-        end
-      end)
-    else
-      QBCore.Functions.Notify("This is not a rented vehicle.", "error")
+    local papers = exports.ox_inventory:Search('slots', 'rentalpapers')
+    for _, v in pairs(papers) do
+      if string.find(tostring(plate), "GB") and string.find(json.encode(v.metadata), plate) then
+        ESX.TriggerServerCallback('gb-rental:server:hasrentalpapers', function(HasItem)
+          if HasItem then
+            local hash = GetEntityModel(car)
+            local model = GetDisplayNameFromVehicleModel(hash)
+            TriggerServerEvent('gb-rental:removerentalpaperServer', plate, model)
+            TriggerServerEvent('gb-rental:server:payreturn',vehname)
+            DeleteVehicle(car)
+            DeleteEntity(car)
+          else
+            exports['mythic_notify']:DoHudText('error', 'I cannot take a vehicle without proper papers.')
+          end
+        end)
+      else
+        exports['mythic_notify']:DoHudText('error', 'This is not a rented vehicle.')
+      end
     end
 
   else
-    QBCore.Functions.Notify("I don't see any rented vehicle, make sure its nearby.", "error")
+    exports['mythic_notify']:DoHudText('error', 'I don\'t see any rented vehicle, make sure its nearby.')
   end
 end)
 
-RegisterNetEvent("nc-rental:vehiclespawn")
-AddEventHandler("nc-rental:vehiclespawn", function(data, cb)
+RegisterNetEvent("gb-rental:vehiclespawn")
+AddEventHandler("gb-rental:vehiclespawn", function(data, cb)
   local model = data
 
   RequestModel(model)
@@ -79,17 +131,21 @@ AddEventHandler("nc-rental:vehiclespawn", function(data, cb)
   end
   SetModelAsNoLongerNeeded(model)
 
-  local veh = CreateVehicle(model, vector4(-1235.327, -180.5932, 38.784908, 261.06628), true, false)
+  local veh = CreateVehicle(model, Config.carspawnlocation, true, false)
   Citizen.Wait(100)
   SetEntityAsMissionEntity(veh, true, true)
   SetModelAsNoLongerNeeded(model)
   SetVehicleOnGroundProperly(veh)
-  SetVehicleNumberPlateText(veh, "NC"..tostring(math.random(1000, 9999)))
+  SetVehicleNumberPlateText(veh, "GB"..tostring(math.random(1000, 9999)))
+
+
+  --CARKEYS EVENT
   local plate = GetVehicleNumberPlateText(veh)
-  TriggerEvent("vehiclekeys:client:SetOwner", GetVehicleNumberPlateText(veh), veh)
+  --TriggerEvent("vehiclekeys:client:SetOwner", GetVehicleNumberPlateText(veh), veh)
+  TriggerServerEvent('hsn-hotwire:addKeys',plate)
 
   local plateText = GetVehicleNumberPlateText(veh)
-  TriggerServerEvent("nc-rental:giverentalpaperServer",model ,plateText)
+  TriggerServerEvent("gb-rental:giverentalpaperServer",model ,plateText)
 
   local timeout = 10
   while not NetworkDoesEntityExistWithNetworkId(veh) and timeout > 0 do
@@ -98,19 +154,20 @@ AddEventHandler("nc-rental:vehiclespawn", function(data, cb)
   end
 end)
 
-AddEventHandler("nc-inventory:itemUsed", function(item, info)
-  if item == "rentalpapers" then
 
+
+RegisterNetEvent('gb-rental:papercheck')
+AddEventHandler('gb-rental:papercheck', function(info)
     local plyPed = PlayerPedId()
     local plyVeh = GetVehiclePedIsIn(plyPed, false)
       data = json.decode(info)
       local vin = GetVehicleNumberPlateText(plyVeh)
-      local isRental = vin ~= nil and string.sub(vin, 2, 3) == "NC"
+      local isRental = vin ~= nil and string.sub(vin, 2, 3) == "GB"
       if isRental then
-        TriggerEvent("vehiclekeys:client:SetOwner", GetVehicleNumberPlateText(plyVeh))
-        QBCore.Functions.Notify("You received the vehicle keys.", "success")
+    --CARKEYS EVENT
+        TriggerServerEvent('hsn-hotwire:addKeys', GetVehicleNumberPlateText(plyVeh))
+        exports['mythic_notify']:DoHudText('success', 'You received the vehicle keys.')
       else
-        QBCore.Functions.Notify("This rental does not exist.", "success")
+        exports['mythic_notify']:DoHudText('error', 'This rental does not exist.')
       end
-  end
 end)
