@@ -1,50 +1,62 @@
-QBCore = nil
-TriggerEvent('QBCore:GetObject', function(obj) QBCore = obj end)
 
-RegisterServerEvent('nc-rental:attemptPurchase')
-AddEventHandler('nc-rental:attemptPurchase', function(car,price)
-	local src = source
-	local Player = QBCore.Functions.GetPlayer(src)
-    local cash = Player.PlayerData.money.cash
+RegisterServerEvent('gb-rental:attemptPurchase')
+AddEventHandler('gb-rental:attemptPurchase', function(car,price)
+	local xPlayer = ESX.GetPlayerFromId(source)
+    local cash = xPlayer.getMoney()
     if cash >= price then
-        Player.Functions.RemoveMoney("cash",price,"rentals")
-        TriggerClientEvent('nc-rental:vehiclespawn', source, car)
-        TriggerClientEvent('QBCore:Notify', src, car .. " has been rented for $" .. price .. ", return it in order to receive 50% of the total costs.", "success")
+        xPlayer.removeMoney(price)
+        TriggerClientEvent('gb-rental:vehiclespawn', source, car)
+
+        TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'inform', text = car..'has been rented for €' .. price .. ', return it in order to receive 50% of the total costs.'})
+
     else
-        TriggerClientEvent('nc-rental:attemptvehiclespawnfail', source)
+        TriggerClientEvent('gb-rental:attemptvehiclespawnfail', source)
     end
 end)
 
-RegisterServerEvent('nc-rental:giverentalpaperServer')
-AddEventHandler('nc-rental:giverentalpaperServer', function(model, plateText)
-    local src = source
-    local PlayerData = QBCore.Functions.GetPlayer(src)
-    local info = {
-        label = plateText
-    }
-    PlayerData.Functions.AddItem('rentalpapers', 1, false, info)
-    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['rentalpapers'], "add")
+RegisterServerEvent('gb-rental:giverentalpaperServer')
+AddEventHandler('gb-rental:giverentalpaperServer', function(model, plateText)
+    exports.ox_inventory:AddItem(source, 'rentalpapers', 1, {description = 'Model: '..model..' Licenseplate: '..plateText})
+    --Model : "..tostring(model).." | Plate : "..tostring(plate)..
 end)
 
-RegisterServerEvent('nc-rental:server:payreturn')
-AddEventHandler('nc-rental:server:payreturn', function(model)
-    local src = source
-    local Player = QBCore.Functions.GetPlayer(source)
+RegisterServerEvent('gb-rental:removerentalpaperServer')
+AddEventHandler('gb-rental:removerentalpaperServer', function(plateText, model)
+    deltext = {'Model: '..model..' Licenseplate: '..plateText}
+    exports.ox_inventory:RemoveItem(source, 'rentalpapers', 1)
+
+end)
+
+RegisterServerEvent('gb-rental:server:payreturn')
+AddEventHandler('gb-rental:server:payreturn', function(model)
+    local xPlayer = ESX.GetPlayerFromId(source)
     for k,v in pairs(Config.vehicleList) do 
         if string.lower(v.model) == model then
             local payment = v.price / 2
-            Player.Functions.AddMoney("cash",payment,"rental-return")
-            TriggerClientEvent('QBCore:Notify', src, "You have returned your rented vehicle and received $" .. payment .. " in return.", "success")
+            xPlayer.addMoney(payment)
+            TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'inform', text = 'You have returned your rented vehicle and received €' ..payment..' in return.'})
+
         end
     end
 end)
 
-QBCore.Functions.CreateCallback('nc-rental:server:hasrentalpapers', function(source, cb)
-    local Player = QBCore.Functions.GetPlayer(source)
-    local Item = Player.Functions.GetItemByName("rentalpapers")
+ESX.RegisterServerCallback('gb-rental:server:hasrentalpapers', function(source, cb)
+    local Item = exports.ox_inventory:Search(source, 'slots', 'rentalpapers')
     if Item ~= nil then
         cb(true)
     else
         cb(false)
     end
+end)
+
+ESX.RegisterUsableItem('rentalpapers', function(source)
+    local papers = exports.ox_inventory:Search(source, 'slots', 'rentalpapers')
+    for _, v in pairs(papers) do
+        papers = v
+        --print(json.encode(v.metadata))
+    end
+    local info = json.encode(papers.metadata)
+    print(info)
+    TriggerClientEvent('gb-rental:papercheck', source, info)
+    
 end)
