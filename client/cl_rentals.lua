@@ -1,151 +1,85 @@
-local pedSpawned = false
-
-Citizen.CreateThread(function()
-  while true do
-      Citizen.Wait(1000)
-          local pedCoords = GetEntityCoords(PlayerPedId()) 
-          local spawnCoords = Config.locationthingy
-          local dst = #(spawnCoords - pedCoords)
-          
-          if dst < 100 and pedSpawned == false then
-              TriggerEvent('gb-rental:spawnPed',spawnCoords, 343.9986)
-              pedSpawned = true
-          end
-          if dst >= 101  then
-              pedSpawned = false
-              DeleteEntity(npc)
-          end
-  end
-end)
-RegisterNetEvent('gb-rental:spawnPed')
-AddEventHandler('gb-rental:spawnPed',function(coords, heading)
-    local hash = `a_m_m_eastsa_01`
-    if not HasModelLoaded(hash) then
-        RequestModel(hash)
-        Wait(10)
-    end
-    while not HasModelLoaded(hash) do 
-        Wait(10)
-    end
-
-    pedSpawned = true
-    npc = CreatePed(5, hash, coords, heading, false, false)
-    FreezeEntityPosition(npc, true)
-    SetEntityInvincible(npc, true)
-    SetBlockingOfNonTemporaryEvents(npc, true)
-    TaskStartScenarioInPlace(npc, 'WORLD_HUMAN_CLIPBOARD')
-    SetModelAsNoLongerNeeded(hash)
-    exports.qtarget:AddEntityZone("Rentalped", npc, {
-      name="Rentalped",
-      debugPoly=false,
-      useZ = true,
-      }, {
-          options = {
-              {
-                  event = "gb-rental:vehiclelist",
-                  icon = "fas fa-circle",
-                  label = "Rent vehicle",
-              },
-              {
-                  event = "gb-rental:returnvehicle",
-                  icon = "fas fa-circle",
-                  label = "Return Vehicle",
-              },
-          },
-          distance = 3.5
-    })
-end)
-
-
-
-RegisterNetEvent("gb-rental:vehiclelist")
-AddEventHandler("gb-rental:vehiclelist", function()
+RegisterNetEvent("nc-rentals:vehiclelist")
+AddEventHandler("nc-rentals:vehiclelist", function(data)  
+  local menu = {
+    {
+        header = "Rent-A-Car"
+    }
+  }
   for i = 1, #Config.vehicleList do
-    TriggerEvent('nh-context:sendMenu', {
+    table.insert(menu,  
       {
-        id = Config.vehicleList[i].model,
         header = Config.vehicleList[i].name,
-        txt = "$"..Config.vehicleList[i].price..".00",
-        params = {
-          event = "gb-rental:attemptvehiclespawn",
-          args = {
-            id = Config.vehicleList[i].model,
-            price = Config.vehicleList[i].price,
-          }
-        }
-      },
-    })
+        context = "$"..Config.vehicleList[i].price,
+        server = true,
+        image = Config.vehicleList[i].image,
+        event = "nc-rentals:attemptPurchase",
+        args = {Config.vehicleList[i].model, Config.vehicleList[i].price, data.location}
+      }
+    )
   end
+  TriggerEvent('nh-context:createMenu', menu)
 end)
 
-RegisterNetEvent("gb-rental:attemptvehiclespawn")
-AddEventHandler("gb-rental:attemptvehiclespawn", function(vehicle)
-    TriggerServerEvent("gb-rental:attemptPurchase",vehicle.id, vehicle.price)
-end)
-
-RegisterNetEvent("gb-rental:attemptvehiclespawnfail")
-AddEventHandler("gb-rental:attemptvehiclespawnfail", function()
-  exports['mythic_notify']:DoHudText('error', 'Not enough money')
-end)
-
-
-RegisterNetEvent("gb-rental:returnvehicle")
-AddEventHandler("gb-rental:returnvehicle", function()
+RegisterNetEvent("nc-rentals:returnvehicle")
+AddEventHandler("nc-rentals:returnvehicle", function()
   local car = GetVehiclePedIsIn(PlayerPedId(),true)
 
   if car ~= 0 then
     local plate = GetVehicleNumberPlateText(car)
     local vehname = string.lower(GetDisplayNameFromVehicleModel(GetEntityModel(car)))
-    local papers = exports.ox_inventory:Search('slots', 'rentalpapers')
-    for _, v in pairs(papers) do
-      if string.find(tostring(plate), "GB") and string.find(json.encode(v.metadata), plate) then
-        ESX.TriggerServerCallback('gb-rental:server:hasrentalpapers', function(HasItem)
-          if HasItem then
-            local hash = GetEntityModel(car)
-            local model = GetDisplayNameFromVehicleModel(hash)
-            TriggerServerEvent('gb-rental:removerentalpaperServer', plate, model)
-            TriggerServerEvent('gb-rental:server:payreturn',vehname)
-            DeleteVehicle(car)
-            DeleteEntity(car)
-          else
-            exports['mythic_notify']:DoHudText('error', 'I cannot take a vehicle without proper papers.')
-          end
-        end)
-      else
-        exports['mythic_notify']:DoHudText('error', 'This is not a rented vehicle.')
-      end
-    end
+    local hash = GetEntityModel(car)
+    local model = GetDisplayNameFromVehicleModel(hash)
 
+    ESX.TriggerServerCallback('nc-rentals:server:hasrentalpapers', function(HasItem)
+      if HasItem then
+        if Config.Keys == "cd_garage" then
+          TriggerEvent('cd_garage:RemoveKeys', plate)
+        elseif Config.Keys == 'other' then
+          --Add your own code here.
+        end
+        TriggerServerEvent('nc-rentals:removerentalpaperServer', plate, model)
+        TriggerServerEvent('nc-rentals:server:payreturn',vehname)
+        ESX.Game.DeleteVehicle(car)
+        DeleteEntity(car)
+      else
+        ESX.ShowNotification('I cannot take a vehicle without proper papers.')
+      end
+    end, plate)
   else
-    exports['mythic_notify']:DoHudText('error', 'I don\'t see any rented vehicle, make sure its nearby.')
+    ESX.ShowNotification('I don\'t see any rented vehicle, make sure its nearby.')
   end
 end)
 
-RegisterNetEvent("gb-rental:vehiclespawn")
-AddEventHandler("gb-rental:vehiclespawn", function(data, cb)
-  local model = data
+RegisterNetEvent("nc-rentals:vehiclespawn")
+AddEventHandler("nc-rentals:vehiclespawn", function(carmodel, spawnlocation, cb)
+  local model = carmodel
 
   RequestModel(model)
   while not HasModelLoaded(model) do
-      Citizen.Wait(0)
+      Wait(0)
   end
   SetModelAsNoLongerNeeded(model)
 
-  local veh = CreateVehicle(model, Config.carspawnlocation, true, false)
-  Citizen.Wait(100)
+  local veh = CreateVehicle(model, spawnlocation, true, false)
+  Wait(100)
   SetEntityAsMissionEntity(veh, true, true)
   SetModelAsNoLongerNeeded(model)
   SetVehicleOnGroundProperly(veh)
-  SetVehicleNumberPlateText(veh, "GB"..tostring(math.random(1000, 9999)))
-
-
-  --CARKEYS EVENT
-  local plate = GetVehicleNumberPlateText(veh)
-  --TriggerEvent("vehiclekeys:client:SetOwner", GetVehicleNumberPlateText(veh), veh)
-  TriggerServerEvent('hsn-hotwire:addKeys',plate)
+  SetVehicleNumberPlateText(veh, "RXTN"..tostring(math.random(1000, 9999)))
 
   local plateText = GetVehicleNumberPlateText(veh)
-  TriggerServerEvent("gb-rental:giverentalpaperServer",model ,plateText)
+  TriggerServerEvent("nc-rentals:giverentalpaperServer",model ,plateText)
+
+  if Config.AutoGiveKeys then
+    if Config.Keys == "cd_garage" then
+      TriggerEvent('cd_garage:AddKeys', plateText)
+    elseif Config.Keys == "t1ger_keys" then
+      local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(GetEntityModel(veh)))
+      exports['t1ger_keys']:GiveTemporaryKeys(plateText, veh_name, 'Rental')
+    elseif Config.Keys == 'other' then
+      --Add your own code here.
+    end
+  end
 
   local timeout = 10
   while not NetworkDoesEntityExistWithNetworkId(veh) and timeout > 0 do
@@ -156,18 +90,77 @@ end)
 
 
 
-RegisterNetEvent('gb-rental:papercheck')
-AddEventHandler('gb-rental:papercheck', function(info)
+RegisterNetEvent('nc-rentals:papercheck')
+AddEventHandler('nc-rentals:papercheck', function()
     local plyPed = PlayerPedId()
     local plyVeh = GetVehiclePedIsIn(plyPed, false)
-      data = json.decode(info)
-      local vin = GetVehicleNumberPlateText(plyVeh)
-      local isRental = vin ~= nil and string.sub(vin, 2, 3) == "GB"
-      if isRental then
-    --CARKEYS EVENT
-        TriggerServerEvent('hsn-hotwire:addKeys', GetVehicleNumberPlateText(plyVeh))
-        exports['mythic_notify']:DoHudText('success', 'You received the vehicle keys.')
-      else
-        exports['mythic_notify']:DoHudText('error', 'This rental does not exist.')
-      end
+    local vin = GetVehicleNumberPlateText(plyVeh)
+    local isRental = vin ~= nil and string.sub(vin, 1, 4) == "RXTN"
+
+    if isRental then
+      ESX.TriggerServerCallback('nc-rentals:server:hasrentalpapers', function(HasItem)
+        if HasItem then
+          if Config.Keys == "cd_garage" then
+            TriggerEvent('cd_garage:AddKeys', vin)
+          elseif Config.Keys == "t1ger_keys" then
+            local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(GetEntityModel(plyVeh)))
+            exports['t1ger_keys']:GiveTemporaryKeys(vin, veh_name, 'Rental')
+          elseif Config.Keys == 'other' then
+            --Add your own code here.
+          end
+          ESX.ShowNotification('You received the vehicle keys.')
+        end
+      end, vin)
+    else
+      ESX.ShowNotification('This rental does not exist.')
+    end
+end)
+
+CreateThread(function()
+  exports['qtarget']:AddCircleZone("nc-rental-legion", vector3(109.0720, -1089.7605, 28.3033), 0.5, {
+    name="nc-rental-legion",
+    heading=306.7711,
+    debugPoly=false,
+    minZ= 27.3033,
+    maxZ= 29.3033
+    }, {
+      options = {
+          {
+            event = "nc-rentals:vehiclelist",
+            icon = "fas fa-comments-dollar",
+            label = "Rent vehicle",
+            location = vector4(110.9995, -1081.4813, 28.6714, 339.0954)
+          },
+          {
+            event = "nc-rentals:returnvehicle",
+            icon = "fas fa-receipt",
+            label = "Return Vehicle"
+          },
+        },
+      distance = 2.5
+    }
+  )
+  exports['qtarget']:AddCircleZone("nc-rental-airport", vector3(-832.3906, -2348.7542, 14.5706), 0.5, {
+    name="nc-rental-airport",
+    heading=278.2155,
+    debugPoly=false,
+    minZ= 13.5706,
+    maxZ= 15.5706
+    }, {
+        options = {
+          {
+            event = "nc-rentals:vehiclelist",
+            icon = "fas fa-comments-dollar",
+            label = "Rent vehicle",
+            location = vector4(-823.6814, -2343.1284, 14.5706, 153.0381)
+          },
+          {
+            event = "nc-rentals:returnvehicle",
+            icon = "fas fa-receipt",
+            label = "Return Vehicle"
+          },
+        },
+      distance = 2.5
+    }
+  )
 end)
