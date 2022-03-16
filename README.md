@@ -19,7 +19,7 @@ Extremely advanced car rental system for mf-inventory. Built for esx-legacy.
 	    },
 	    {
 	    	model = `A_M_Y_Business_02`,
-	    	coords = vector4(-832.3906, -2348.7542, 13.5706, 278.2155), -- Rental - Legion
+	    	coords = vector4(-832.3906, -2348.7542, 13.5706, 278.2155), -- Rental - Airport
 	    	gender = 'male',
             animDict = 'missheistdockssetup1clipboard@base',
             animName = 'base'
